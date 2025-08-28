@@ -46,7 +46,7 @@ import io.swagger.v3.oas.annotations.servers.Server;
 //        in = SecuritySchemeIn.HEADER,
 //        scheme = "bearer",
 //        bearerFormat = "JWT"
-//)
+)
 
 public class SwaggerConfig {
 }

@@ -2,8 +2,8 @@ spring:
   application:
     name: msvc-chat
 
-
-
+server:
+  port: ${MSVC_CHAT_PORT:9096}
 
 springdoc:
   api-docs:
