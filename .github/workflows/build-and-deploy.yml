@@ -1,4 +1,4 @@
-name: Docker Build & Push
+name: Build and deploy container app to Azure Web App - msvc-chat
 
 on:
   workflow_dispatch:
@@ -23,5 +23,21 @@ jobs:
         with:
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/fitdesk-msvc-chat:latest
-          cache-from: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/fitdesk-msvc-chat:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKERHUB_USERNAME }}/fitdesk-msvc-chat:buildcache,mode=max
+          file: ./Dockerfile
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: 'production'
+      url: ${{ steps.deploy-to-webapp.outputs.webapp-url }}
+
+    steps:
+    - name: Deploy to Azure Web App
+      id: deploy-to-webapp
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: 'msvc-chat'
+        slot-name: 'production'
+        publish-profile: ${{ secrets.AzureAppService_PublishProfile_70c064f78e8745a1807ad28c9d6ae16f }}
+        images: "${{ secrets.DOCKERHUB_USERNAME }}/fitdesk-msvc-chat:latest"
