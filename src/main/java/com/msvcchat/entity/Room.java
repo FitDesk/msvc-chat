@@ -14,7 +14,7 @@ import java.util.Set;
 @AllArgsConstructor
 public class Room {
     @Id
-    private String id;           // roomId
-    private Set<String> users;   // ids de usuarios
-    private Set<String> trainers;// ids de entrenadores
+    private String id;
+    private Set<String> users;
+    private Set<String> trainers;
 }

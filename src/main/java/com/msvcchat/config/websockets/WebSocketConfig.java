@@ -13,7 +13,7 @@ public class WebSocketConfig {
 
     @Bean
     public SimpleUrlHandlerMapping webSocketMapping(ChatWebSocketHandler handler) {
-        Map<String, WebSocketHandler> map = Map.of("/ws/chat/{roomId}", handler);
+        Map<String, WebSocketHandler> map = Map.of("/ws/chat/*", handler);
         SimpleUrlHandlerMapping mapping = new SimpleUrlHandlerMapping();
         mapping.setUrlMap(map);
         mapping.setOrder(10);
