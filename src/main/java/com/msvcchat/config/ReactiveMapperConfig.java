@@ -15,12 +15,4 @@ import java.util.function.Function;
     nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE
 )
 public interface ReactiveMapperConfig {
-    
-    default <T, R> Mono<R> mapMono(Mono<T> mono, Function<T, R> mapper) {
-        return mono.map(mapper);
-    }
-    
-    default <T, R> Flux<R> mapFlux(Flux<T> flux, Function<T, R> mapper) {
-        return flux.map(mapper);
-    }
 }
