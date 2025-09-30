@@ -9,5 +9,5 @@ public class CreateChatMessageDto {
     private String fromId;
     private String fromRole;
     private String text;
-
+    private String fromEmail;
 }
