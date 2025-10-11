@@ -15,15 +15,13 @@ public class SecurityConfig {
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, ReactiveJwtDecoder jwtDecoder) {
         return http.authorizeExchange(exchanges -> exchanges.pathMatchers(
-                                        "/actuator/**",
-                                        "swagger-ui/**",
-                                        "v3/api-docs/**",
-                                        "/ws/chat",
-                                        "/test/**"
-                                ).permitAll()
-                                .anyExchange().authenticated()
-                ).oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder))
-                )
+                "/actuator/**",
+                "swagger-ui/**",
+                "v3/api-docs/**",
+                "/ws/chat",
+                "/test/**").permitAll()
+                .anyExchange().authenticated())
+                .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.jwtDecoder(jwtDecoder)))
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .build();
     }
