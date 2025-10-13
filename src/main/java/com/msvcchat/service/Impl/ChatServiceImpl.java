@@ -5,7 +5,6 @@ import com.msvcchat.dtos.CreateChatMessageDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.mappers.ChatMessageMapper;
 import com.msvcchat.repositories.ChatMessageRepository;
-import com.msvcchat.service.ChatRoomManager;
 import com.msvcchat.service.ChatService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,7 +19,7 @@ public class ChatServiceImpl implements ChatService {
 
     private final ChatMessageRepository chatMessageRepository;
     private final ChatMessageMapper mapper;
-    private final ChatRoomManager chatRoomManager;
+    private final ChatRoomManagerImpl chatRoomManagerImpl;
 
     @Override
     public Mono<ChatMessageDto> saveMessage(String roomId, CreateChatMessageDto dto) {
@@ -28,7 +27,7 @@ public class ChatServiceImpl implements ChatService {
         entity.setRoomId(roomId);
         return chatMessageRepository
                 .save(entity)
-                .doOnNext(chatRoomManager::broadcast)
+                .doOnNext(chatRoomManagerImpl::broadcast)
                 .map(mapper::toDto);
     }
 

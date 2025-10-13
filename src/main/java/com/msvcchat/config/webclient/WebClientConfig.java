@@ -12,10 +12,19 @@ public class WebClientConfig {
     @Value("${services.security.url:http://msvc-security:9091}")
     private String securityServiceUrl;
 
-    @Bean
-    public WebClient webClient(WebClient.Builder builder) {
-        log.info("Configurando webclient con url {}", securityServiceUrl);
+    @Value("${services.members.url:http://msvc-members:9098}")
+
+    private String memberServiceUrl;
+
+    @Bean("securityWebClient")
+    public WebClient securityWebClient(WebClient.Builder builder) {
         return builder.baseUrl(securityServiceUrl).build();
     }
+
+    @Bean("membersWebClient")
+    public WebClient membersWebClient(WebClient.Builder builder) {
+        return builder.baseUrl(memberServiceUrl).build();
+    }
+
 
 }

@@ -6,7 +6,7 @@ import com.msvcchat.config.security.JwtService;
 import com.msvcchat.dtos.CreateChatMessageDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.entity.ConversationDocument;
-import com.msvcchat.service.ChatRoomManager;
+import com.msvcchat.service.Impl.ChatRoomManagerImpl;
 import com.msvcchat.service.ChatService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -25,7 +25,6 @@ import reactor.core.publisher.Sinks;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
@@ -33,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 public class ChatWebSocketHandler implements WebSocketHandler {
     private final ChatService chatService;
-    private final ChatRoomManager roomManager;
+    private final ChatRoomManagerImpl roomManager;
     private final JwtService jwtService;
     private final Map<String, Sinks.Many<ChatMessage>> sinks = new ConcurrentHashMap<>();
     private final ReactiveMongoTemplate mongoTemplate;

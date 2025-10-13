@@ -1,12 +1,16 @@
 package com.msvcchat.controller;
 
 import com.msvcchat.dtos.*;
+import com.msvcchat.dtos.members.MemberDto;
 import com.msvcchat.dtos.security.RoleDto;
+import com.msvcchat.dtos.security.SimpleRoleDto;
+import com.msvcchat.dtos.security.SimpleUserDto;
 import com.msvcchat.dtos.security.UserSecurityDto;
 import com.msvcchat.service.ChatService;
 import com.msvcchat.service.ConversationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +28,11 @@ public class ChatController {
 
     private final ChatService chatService;
     private final ConversationService conversationService;
-    private final WebClient webClient;
+    @Qualifier("securityWebClient")
+    private final WebClient securityWebClient;
+    @Qualifier("membersWebClient")
+    private final WebClient membersWebClient;
+
 
     @GetMapping("/conversations")
     public Flux<ConversationDto> getConversations(Authentication authentication) {
@@ -70,47 +78,74 @@ public class ChatController {
         return conversationService.markAsRead(conversationId, userEmail);
     }
 
-    /**
-     * Obtener usuarios disponibles para chatear (filtrados por rol)
-     */
+
     @GetMapping("/users/{role}")
     public Flux<UserDto> getUsersByRole(
             @PathVariable String role,
             Authentication authentication) {
 
         String normalizedRole = role.toUpperCase();
-        log.info("📋 Obteniendo usuarios con rol: {}", normalizedRole);
+        log.info("Obteniendo usuarios con rol: {}", normalizedRole);
 
-        return webClient.get()
+        return securityWebClient.get()
                 .uri("/users/by-role/{role}", normalizedRole)
                 .retrieve()
-                .bodyToFlux(UserSecurityDto.class)
-                .map(userSec -> {
-                    // ✅ Construir el nombre de forma segura
-                    String displayName = buildDisplayName(userSec);
+                .bodyToFlux(SimpleUserDto.class)
+                .flatMap(userSec -> {
+                    log.info("Usuario traído de msvc-security: {}", userSec);
 
-                    log.debug("Usuario mapeado: id={}, name={}, email={}",
-                            userSec.getId(), displayName, userSec.getEmail());
+                    return membersWebClient.get()
+                            .uri("/public/member/{userId}", userSec.id())
+                            .retrieve()
+                            .bodyToMono(MemberDto.class)
+                            .map(member -> {
+                                log.info("Datos de miembro: {}", member);
 
-                    return new UserDto(
-                            userSec.getId().toString(),
-                            displayName,
-                            userSec.getRoles().stream()
-                                    .findFirst()
-                                    .map(RoleDto::getName)
-                                    .orElse("USER"),
-                            null // avatar
-                    );
+                                // ✅ Construir el nombre completo
+                                String displayName = buildDisplayName(
+                                        member.firstName(),
+                                        member.lastName(),
+                                        userSec.email()
+                                );
+
+                                String mainRole = userSec.roles().stream()
+                                        .findFirst()
+                                        .map(SimpleRoleDto::name)
+                                        .orElse("USER");
+
+                                return new UserDto(
+                                        userSec.id(),
+                                        displayName,
+                                        mainRole,
+                                        member.profileImageUrl()
+                                );
+                            })
+                            .onErrorResume(error -> {
+                                log.warn("⚠️ No se pudo obtener datos de members para userId={}: {}",
+                                        userSec.id(), error.getMessage());
+
+                                String fallbackName = buildDisplayName(
+                                        userSec.firstName(),
+                                        userSec.lastName(),
+                                        userSec.email()
+                                );
+
+                                return Mono.just(new UserDto(
+                                        userSec.id(),
+                                        fallbackName,
+                                        userSec.roles().stream()
+                                                .findFirst()
+                                                .map(SimpleRoleDto::name)
+                                                .orElse("USER"),
+                                        null
+                                ));
+                            });
                 })
                 .doOnError(error -> log.error("❌ Error obteniendo usuarios por rol {}: {}",
                         normalizedRole, error.getMessage()));
     }
 
-    private String buildDisplayName(UserSecurityDto user) {
-        String firstName = user.getFirstName();
-        String lastName = user.getLastName();
-        String email = user.getEmail();
-
+    private String buildDisplayName(String firstName, String lastName, String email) {
         // Caso 1: Ambos nombres disponibles
         if (firstName != null && !firstName.isBlank() &&
                 lastName != null && !lastName.isBlank()) {
@@ -136,9 +171,6 @@ public class ChatController {
         return "Usuario sin nombre";
     }
 
-    /**
-     * Extraer el userId del token JWT
-     */
     private UUID getUserIdFromToken(Authentication authentication) {
         if (authentication instanceof JwtAuthenticationToken jwtAuth) {
             String userId = jwtAuth.getToken().getClaim("user_id");

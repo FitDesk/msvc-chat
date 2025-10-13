@@ -1,7 +1,10 @@
 package com.msvcchat.service.Impl;
 
 import com.msvcchat.dtos.*;
+import com.msvcchat.dtos.members.MemberDto;
 import com.msvcchat.dtos.security.RoleDto;
+import com.msvcchat.dtos.security.SimpleRoleDto;
+import com.msvcchat.dtos.security.SimpleUserDto;
 import com.msvcchat.dtos.security.UserSecurityDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.entity.ConversationDocument;
@@ -10,6 +13,7 @@ import com.msvcchat.repositories.ConversationRepository;
 import com.msvcchat.service.ConversationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -28,7 +32,13 @@ public class ConversationServiceImpl implements ConversationService {
     private final ConversationRepository conversationRepository;
     private final ReactiveMongoTemplate mongoTemplate;
     private final ConversationMapper conversationMapper;
-    private final WebClient webClient;
+    @Qualifier("securityWebClient")
+    private final WebClient securityWebClient;
+
+    @Qualifier("membersWebClient")
+    // ✅ NUEVO
+    private final WebClient membersWebClient;
+
 
     @Override
     public Flux<ConversationDto> getConversationsByUser(String userEmail) {
@@ -96,26 +106,67 @@ public class ConversationServiceImpl implements ConversationService {
                 .orElse(null);
 
         if (participantEmail == null) {
+            log.warn("⚠️ No se encontró email del participante en conversación {}", conversation.getId());
             return Mono.just(dto);
         }
 
+        // 1️⃣ Obtener datos de security
         return getUserByEmailFromSecurity(participantEmail)
                 .flatMap(userSecurityDto -> {
-                    // ✅ Construir nombre de forma segura
-                    String displayName = buildDisplayName(userSecurityDto);
+                    String userId = userSecurityDto.id();
 
-                    UserDto userDto = new UserDto(
-                            userSecurityDto.getId().toString(),
-                            displayName,
-                            userSecurityDto.getRoles().stream()
-                                    .findFirst()
-                                    .map(RoleDto::getName)
-                                    .orElse("USER"),
-                            null
-                    );
-                    dto.setParticipant(userDto);
+                    // 2️⃣ Obtener datos de members
+                    return getMemberFromMembers(userId)
+                            .map(memberDto -> {
+                                // ✅ Combinar datos de ambos microservicios
+                                String displayName = buildDisplayName(
+                                        memberDto.firstName(),
+                                        memberDto.lastName(),
+                                        userSecurityDto.email()
+                                );
 
-                    // Obtener último mensaje si existe
+                                String mainRole = userSecurityDto.roles().stream()
+                                        .findFirst()
+                                        .map(SimpleRoleDto::name)
+                                        .orElse("USER");
+
+                                UserDto enrichedUser = new UserDto(
+                                        userId,
+                                        displayName,
+                                        mainRole,
+                                        memberDto.profileImageUrl() // ✅ Foto de perfil
+                                );
+
+                                dto.setParticipant(enrichedUser);
+                                return dto;
+                            })
+                            .onErrorResume(error -> {
+                                // ✅ Si falla members, usar solo datos de security
+                                log.warn("⚠️ No se pudo obtener datos de members para userId={}: {}",
+                                        userId, error.getMessage());
+
+                                String fallbackName = buildDisplayName(
+                                        userSecurityDto.firstName(),
+                                        userSecurityDto.lastName(),
+                                        userSecurityDto.email()
+                                );
+
+                                UserDto partialUser = new UserDto(
+                                        userId,
+                                        fallbackName,
+                                        userSecurityDto.roles().stream()
+                                                .findFirst()
+                                                .map(SimpleRoleDto::name)
+                                                .orElse("USER"),
+                                        null // Sin foto
+                                );
+
+                                dto.setParticipant(partialUser);
+                                return Mono.just(dto);
+                            });
+                })
+                .flatMap(enrichedDto -> {
+                    // 3️⃣ Obtener último mensaje
                     if (conversation.getLastMessageId() != null) {
                         return mongoTemplate.findById(conversation.getLastMessageId(), ChatMessage.class)
                                 .map(lastMsg -> {
@@ -123,25 +174,21 @@ public class ConversationServiceImpl implements ConversationService {
                                     msgDto.setId(lastMsg.getId());
                                     msgDto.setText(lastMsg.getText());
                                     msgDto.setCreatedAt(lastMsg.getCreatedAt());
-                                    dto.setLastMessage(msgDto);
-                                    return dto;
+                                    enrichedDto.setLastMessage(msgDto);
+                                    return enrichedDto;
                                 })
-                                .defaultIfEmpty(dto);
+                                .defaultIfEmpty(enrichedDto);
                     }
-
-                    return Mono.just(dto);
+                    return Mono.just(enrichedDto);
                 })
                 .onErrorResume(error -> {
-                    log.error("Error enriqueciendo conversación: {}", error.getMessage());
+                    log.error("❌ Error enriqueciendo conversación {}: {}",
+                            conversation.getId(), error.getMessage());
                     return Mono.just(dto);
                 });
     }
 
-    private String buildDisplayName(UserSecurityDto user) {
-        String firstName = user.getFirstName();
-        String lastName = user.getLastName();
-        String email = user.getEmail();
-
+    private String buildDisplayName(String firstName, String lastName, String email) {
         if (firstName != null && !firstName.isBlank() &&
                 lastName != null && !lastName.isBlank()) {
             return firstName + " " + lastName;
@@ -165,19 +212,25 @@ public class ConversationServiceImpl implements ConversationService {
     /**
      * Obtener usuario por email desde msvc-security usando WebClient
      */
-    private Mono<UserSecurityDto> getUserByEmailFromSecurity(String email) {
-        return webClient.get()
+    private Mono<SimpleUserDto> getUserByEmailFromSecurity(String email) {
+        return securityWebClient.get()
                 .uri("/users/by-email/{email}", email)
                 .retrieve()
-                .bodyToMono(UserSecurityDto.class)
-                .doOnError(error -> log.error("Error obteniendo usuario por email {}: {}", email, error.getMessage()));
+                .bodyToMono(SimpleUserDto.class)
+                .doOnError(error -> log.error("❌ Error obteniendo usuario de security: {}", error.getMessage()));
     }
 
-    /**
-     * Obtener usuario por ID desde msvc-security usando WebClient
-     */
+    private Mono<MemberDto> getMemberFromMembers(String userId) {
+        return membersWebClient.get()
+                .uri("/public/member/{userId}", userId)
+                .retrieve()
+                .bodyToMono(MemberDto.class)
+                .doOnError(error -> log.error("❌ Error obteniendo miembro de members: {}", error.getMessage()));
+    }
+
+
     private Mono<UserSecurityDto> getUserByIdFromSecurity(String userId) {
-        return webClient.get()
+        return securityWebClient.get()
                 .uri("/users/{id}", userId)
                 .retrieve()
                 .bodyToMono(UserSecurityDto.class)
