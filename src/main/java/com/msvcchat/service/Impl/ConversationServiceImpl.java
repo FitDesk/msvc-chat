@@ -1,10 +1,10 @@
 package com.msvcchat.service.Impl;
 
 import com.msvcchat.dtos.*;
-import com.msvcchat.dtos.security.SimpleRoleDto;
 import com.msvcchat.dtos.security.SimpleUserDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.entity.ConversationDocument;
+import com.msvcchat.mappers.ChatMessageMapper;
 import com.msvcchat.mappers.ConversationMapper;
 import com.msvcchat.repositories.ConversationRepository;
 import com.msvcchat.service.ChatRoomManager;
@@ -13,7 +13,10 @@ import com.msvcchat.service.ExternalServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.ReactiveMongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -34,6 +37,8 @@ public class ConversationServiceImpl implements ConversationService {
     private final ConversationMapper conversationMapper;
     private final ChatRoomManager chatRoomManager;
     private final ExternalServiceClient externalServiceClient;
+    private final ChatMessageMapper chatMessageMapper;
+
     @Qualifier("securityWebClient")
     private final WebClient securityWebClient;
 
@@ -154,23 +159,20 @@ public class ConversationServiceImpl implements ConversationService {
                                         memberDto.firstName(),
                                         memberDto.lastName()
                                 );
-
-                                String mainRole = userSecurityDto.roles().stream()
-                                        .findFirst()
-                                        .map(SimpleRoleDto::name)
-                                        .orElse("USER");
-
+                                String initials = generateInitials(memberDto.firstName(), memberDto.lastName());
                                 UserDto enrichedUser = new UserDto(
                                         userId,
                                         displayName,
-                                        memberDto.profileImageUrl()
+                                        memberDto.profileImageUrl(),
+                                        initials
+
                                 );
 
                                 dto.setParticipant(enrichedUser);
                                 return dto;
                             })
                             .onErrorResume(error -> {
-                                log.warn("⚠️ No se pudo obtener datos de members para userId={}: {}",
+                                log.warn("No se pudo obtener datos de members para userId={}: {}",
                                         userId, error.getMessage());
 
                                 String fallbackName = buildDisplayName(
@@ -178,10 +180,15 @@ public class ConversationServiceImpl implements ConversationService {
                                         userSecurityDto.lastName()
                                 );
 
+                                String initials = generateInitialsFromEmail(
+                                        userSecurityDto.email()
+                                );
+
                                 UserDto partialUser = new UserDto(
                                         userId,
                                         fallbackName,
-                                        null
+                                        null,
+                                        initials
                                 );
 
                                 dto.setParticipant(partialUser);
@@ -189,19 +196,23 @@ public class ConversationServiceImpl implements ConversationService {
                             });
                 })
                 .flatMap(enrichedDto -> {
-                    if (conversation.getLastMessageId() != null) {
-                        return mongoTemplate.findById(conversation.getLastMessageId(), ChatMessage.class)
-                                .map(lastMsg -> {
-                                    ChatMessageDto msgDto = new ChatMessageDto();
-                                    msgDto.setId(lastMsg.getId());
-                                    msgDto.setText(lastMsg.getText());
-                                    msgDto.setCreatedAt(lastMsg.getCreatedAt());
-                                    enrichedDto.setLastMessage(msgDto);
-                                    return enrichedDto;
-                                })
-                                .defaultIfEmpty(enrichedDto);
-                    }
-                    return Mono.just(enrichedDto);
+                    return mongoTemplate.find(
+                                    Query.query(
+                                            Criteria.where("roomId")
+                                                    .is(conversation.getId())
+                                    ).with(Sort.by(
+                                            Sort.Direction.DESC, "createdAt"
+                                    )).limit(1),
+                                    ChatMessage.class
+                            )
+                            .next()
+                            .map(lastMsg -> {
+                                ChatMessageDto lastMessageDto = chatMessageMapper.toDto(lastMsg);
+                                enrichedDto.setLastMessage(lastMessageDto);
+                                enrichedDto.setLastMessageDate(lastMsg.getCreatedAt());
+                                return enrichedDto;
+                            })
+                            .defaultIfEmpty(enrichedDto);
                 })
                 .onErrorResume(error -> {
                     log.error("❌ Error enriqueciendo conversación {}: {}",
@@ -209,7 +220,6 @@ public class ConversationServiceImpl implements ConversationService {
                     return Mono.just(dto);
                 });
     }
-
 
     private boolean checkUserConnection(String userId) {
         return chatRoomManager.getAllRooms().stream().anyMatch(roomId -> chatRoomManager.getUsersInRoom(roomId).contains(userId));

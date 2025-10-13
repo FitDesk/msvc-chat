@@ -11,8 +11,10 @@ public interface ConversationMapper {
 
     @Mapping(target = "participant", ignore = true)
     @Mapping(target = "lastMessage", ignore = true)
+    @Mapping(target = "lastMessageDate", ignore = true)
     @Mapping(target = "unreadCount", constant = "0")
-//    @Mapping(target = "isFavorite", constant = "false")
+    @Mapping(target = "isFavorite", constant = "false")
+    @Mapping(target = "isConnected", constant = "false")
     ConversationDto toDto(ConversationDocument entity);
 
 }

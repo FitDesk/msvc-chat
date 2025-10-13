@@ -5,6 +5,7 @@ import com.msvcchat.dtos.CreateChatMessageDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.mappers.ChatMessageMapper;
 import com.msvcchat.repositories.ChatMessageRepository;
+import com.msvcchat.repositories.ConversationRepository;
 import com.msvcchat.service.ChatService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Mono;
 public class ChatServiceImpl implements ChatService {
 
     private final ChatMessageRepository chatMessageRepository;
+    private final ConversationRepository conversationRepository;
     private final ChatMessageMapper mapper;
     private final ChatRoomManagerImpl chatRoomManagerImpl;
 
@@ -27,7 +29,18 @@ public class ChatServiceImpl implements ChatService {
         entity.setRoomId(roomId);
         return chatMessageRepository
                 .save(entity)
-                .doOnNext(chatRoomManagerImpl::broadcast)
+                .flatMap(savedMessage -> {
+                    return conversationRepository.findById(roomId)
+                            .flatMap(conversation -> {
+                                conversation.setLastMessageId(savedMessage.getId());
+                                conversation.setLastActivity(savedMessage.getCreatedAt());
+                                return conversationRepository.save(conversation);
+                            })
+                            .onErrorResume(error -> {
+                                log.warn("Error al actualizar la converzacion {} :{}", roomId, error.getMessage());
+                                return Mono.empty();
+                            }).thenReturn(savedMessage);
+                }).doOnNext(chatRoomManagerImpl::broadcast)
                 .map(mapper::toDto);
     }
 

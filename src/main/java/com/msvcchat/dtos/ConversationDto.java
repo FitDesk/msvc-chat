@@ -13,8 +13,10 @@ public class ConversationDto {
     private String id;
     private UserDto participant;
     private ChatMessageDto lastMessage;
+    private Instant lastMessageDate;
     private int unreadCount;
-    private boolean isFavorite;
+    private Boolean isFavorite;
+    private Boolean isConnected;
     private Instant createdAt;
     private Instant updatedAt;
 }
