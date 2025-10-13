@@ -10,4 +10,5 @@ public interface ChatRoomManager {
     void addUserToRoom(String roomId, String userId);
     Set<String> getUsersInRoom(String roomId);
     void broadcast(ChatMessage msg);
+    Set<String> getAllRooms();
 }

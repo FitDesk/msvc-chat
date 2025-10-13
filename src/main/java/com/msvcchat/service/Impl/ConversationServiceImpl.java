@@ -1,16 +1,15 @@
 package com.msvcchat.service.Impl;
 
 import com.msvcchat.dtos.*;
-import com.msvcchat.dtos.members.MemberDto;
-import com.msvcchat.dtos.security.RoleDto;
 import com.msvcchat.dtos.security.SimpleRoleDto;
 import com.msvcchat.dtos.security.SimpleUserDto;
-import com.msvcchat.dtos.security.UserSecurityDto;
 import com.msvcchat.entity.ChatMessage;
 import com.msvcchat.entity.ConversationDocument;
 import com.msvcchat.mappers.ConversationMapper;
 import com.msvcchat.repositories.ConversationRepository;
+import com.msvcchat.service.ChatRoomManager;
 import com.msvcchat.service.ConversationService;
+import com.msvcchat.service.ExternalServiceClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,7 +21,8 @@ import reactor.core.publisher.Mono;
 
 import java.time.Instant;
 import java.util.Set;
-import java.util.UUID;
+
+import static com.msvcchat.helpers.ChatHelper.*;
 
 @Service
 @RequiredArgsConstructor
@@ -32,11 +32,12 @@ public class ConversationServiceImpl implements ConversationService {
     private final ConversationRepository conversationRepository;
     private final ReactiveMongoTemplate mongoTemplate;
     private final ConversationMapper conversationMapper;
+    private final ChatRoomManager chatRoomManager;
+    private final ExternalServiceClient externalServiceClient;
     @Qualifier("securityWebClient")
     private final WebClient securityWebClient;
 
     @Qualifier("membersWebClient")
-    // ✅ NUEVO
     private final WebClient membersWebClient;
 
 
@@ -48,15 +49,11 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     public Mono<ConversationDto> createConversation(String userEmail, CreateConversationDto dto) {
-        // Obtener información del usuario participante desde msvc-security
-        return getUserByIdFromSecurity(dto.participantId())
+        return externalServiceClient.getUserByIdFromSecurity(dto.participantId())
                 .flatMap(participantUser -> {
                     String participantEmail = participantUser.getEmail();
-
-                    // Verificar si ya existe conversación
                     return conversationRepository.findByParticipantsContainingAll(Set.of(userEmail, participantEmail))
                             .switchIfEmpty(
-                                    // Crear nueva conversación
                                     conversationRepository.save(new ConversationDocument(
                                             null,
                                             Set.of(userEmail, participantEmail),
@@ -94,9 +91,46 @@ public class ConversationServiceImpl implements ConversationService {
                 .map(ConversationDocument::getId);
     }
 
-    /**
-     * Enriquecer el DTO de conversación con información del participante y último mensaje
-     */
+    @Override
+    public Flux<UserConnectionDto> getAllUsersByRole(String role) {
+        return securityWebClient.get()
+                .uri("/users/by-role/{role}", role)
+                .retrieve()
+                .bodyToFlux(SimpleUserDto.class)
+                .flatMap(user -> {
+                    log.info("Usuario traído de security {}", user);
+                    return externalServiceClient.getMemberFromMembers(user.id())
+                            .map(memberDto -> {
+                                String displayName = buildDisplayName(memberDto.firstName(), memberDto.lastName());
+                                String initials = generateInitials(memberDto.firstName(), memberDto.lastName());
+                                boolean isConnected = checkUserConnection(user.id());
+
+                                return new UserConnectionDto(
+                                        user.id(),
+                                        displayName,
+                                        isConnected,
+                                        memberDto.profileImageUrl(),
+                                        initials
+                                );
+                            })
+                            .onErrorResume(error -> {
+                                log.warn("Error obteniendo member para userId {}: {}", user.id(), error.getMessage());
+                                String fallbackName = user.email() != null ? user.email() : "Usuario";
+                                String initials = generateInitialsFromEmail(user.email());
+
+                                return Mono.just(new UserConnectionDto(
+                                        user.id(),
+                                        fallbackName,
+                                        false,
+                                        null,
+                                        initials
+                                ));
+                            });
+                })
+                .doOnError(error -> log.error("Error obteniendo usuarios por rol {}: {}", role, error.getMessage()));
+    }
+
+
     private Mono<ConversationDto> enrichConversationDto(ConversationDocument conversation, String currentUserEmail) {
         ConversationDto dto = conversationMapper.toDto(conversation);
 
@@ -110,19 +144,15 @@ public class ConversationServiceImpl implements ConversationService {
             return Mono.just(dto);
         }
 
-        // 1️⃣ Obtener datos de security
-        return getUserByEmailFromSecurity(participantEmail)
+        return externalServiceClient.getUserByEmailFromSecurity(participantEmail)
                 .flatMap(userSecurityDto -> {
                     String userId = userSecurityDto.id();
 
-                    // 2️⃣ Obtener datos de members
-                    return getMemberFromMembers(userId)
+                    return externalServiceClient.getMemberFromMembers(userId)
                             .map(memberDto -> {
-                                // ✅ Combinar datos de ambos microservicios
                                 String displayName = buildDisplayName(
                                         memberDto.firstName(),
-                                        memberDto.lastName(),
-                                        userSecurityDto.email()
+                                        memberDto.lastName()
                                 );
 
                                 String mainRole = userSecurityDto.roles().stream()
@@ -133,32 +163,25 @@ public class ConversationServiceImpl implements ConversationService {
                                 UserDto enrichedUser = new UserDto(
                                         userId,
                                         displayName,
-                                        mainRole,
-                                        memberDto.profileImageUrl() // ✅ Foto de perfil
+                                        memberDto.profileImageUrl()
                                 );
 
                                 dto.setParticipant(enrichedUser);
                                 return dto;
                             })
                             .onErrorResume(error -> {
-                                // ✅ Si falla members, usar solo datos de security
                                 log.warn("⚠️ No se pudo obtener datos de members para userId={}: {}",
                                         userId, error.getMessage());
 
                                 String fallbackName = buildDisplayName(
                                         userSecurityDto.firstName(),
-                                        userSecurityDto.lastName(),
-                                        userSecurityDto.email()
+                                        userSecurityDto.lastName()
                                 );
 
                                 UserDto partialUser = new UserDto(
                                         userId,
                                         fallbackName,
-                                        userSecurityDto.roles().stream()
-                                                .findFirst()
-                                                .map(SimpleRoleDto::name)
-                                                .orElse("USER"),
-                                        null // Sin foto
+                                        null
                                 );
 
                                 dto.setParticipant(partialUser);
@@ -166,7 +189,6 @@ public class ConversationServiceImpl implements ConversationService {
                             });
                 })
                 .flatMap(enrichedDto -> {
-                    // 3️⃣ Obtener último mensaje
                     if (conversation.getLastMessageId() != null) {
                         return mongoTemplate.findById(conversation.getLastMessageId(), ChatMessage.class)
                                 .map(lastMsg -> {
@@ -188,52 +210,9 @@ public class ConversationServiceImpl implements ConversationService {
                 });
     }
 
-    private String buildDisplayName(String firstName, String lastName, String email) {
-        if (firstName != null && !firstName.isBlank() &&
-                lastName != null && !lastName.isBlank()) {
-            return firstName + " " + lastName;
-        }
 
-        if (firstName != null && !firstName.isBlank()) {
-            return firstName;
-        }
-
-        if (lastName != null && !lastName.isBlank()) {
-            return lastName;
-        }
-
-        if (email != null && !email.isBlank()) {
-            return email.split("@")[0];
-        }
-
-        return "Usuario sin nombre";
+    private boolean checkUserConnection(String userId) {
+        return chatRoomManager.getAllRooms().stream().anyMatch(roomId -> chatRoomManager.getUsersInRoom(roomId).contains(userId));
     }
 
-    /**
-     * Obtener usuario por email desde msvc-security usando WebClient
-     */
-    private Mono<SimpleUserDto> getUserByEmailFromSecurity(String email) {
-        return securityWebClient.get()
-                .uri("/users/by-email/{email}", email)
-                .retrieve()
-                .bodyToMono(SimpleUserDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo usuario de security: {}", error.getMessage()));
-    }
-
-    private Mono<MemberDto> getMemberFromMembers(String userId) {
-        return membersWebClient.get()
-                .uri("/public/member/{userId}", userId)
-                .retrieve()
-                .bodyToMono(MemberDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo miembro de members: {}", error.getMessage()));
-    }
-
-
-    private Mono<UserSecurityDto> getUserByIdFromSecurity(String userId) {
-        return securityWebClient.get()
-                .uri("/users/{id}", userId)
-                .retrieve()
-                .bodyToMono(UserSecurityDto.class)
-                .doOnError(error -> log.error("Error obteniendo usuario por ID {}: {}", userId, error.getMessage()));
-    }
 }

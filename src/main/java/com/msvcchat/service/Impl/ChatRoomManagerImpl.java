@@ -49,6 +49,11 @@ public class ChatRoomManagerImpl implements ChatRoomManager {
         }
     }
 
+    @Override
+    public Set<String> getAllRooms() {
+        return roomUsers.keySet();
+    }
+
 
     @PostConstruct
     void startChangeStreamListener() {
