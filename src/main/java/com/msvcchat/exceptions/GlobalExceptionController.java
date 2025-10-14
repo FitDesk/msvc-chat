@@ -16,6 +16,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.MethodNotAllowedException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 
+import java.nio.file.AccessDeniedException;
 import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -97,17 +98,17 @@ public class GlobalExceptionController {
         return ResponseEntity.status(ex.getStatusCode()).body(errorResponse);
     }
 
-//    @ExceptionHandler(AccessDeniedException.class)
-//    public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException ex) {
-//        ErrorResponse errorResponse = new ErrorResponse(
-//                "ACCESS_DENIED",
-//                "Acceso denegado",
-//                Collections.singletonList(
-//                        "No tienes los permisos necesarios para realizar esta acción"));
-//
-//        log.warn("Access denied for user");
-//        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
-//    }
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDeniedException(AccessDeniedException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                "ACCESS_DENIED",
+                "Acceso denegado",
+                Collections.singletonList(
+                        "No tienes los permisos necesarios para realizar esta acción"));
+
+        log.warn("Access denied for user");
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(errorResponse);
+    }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception ex) {
@@ -143,4 +144,28 @@ public class GlobalExceptionController {
         log.error("Circuit breaker abierto: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(errorResponse);
     }
+
+    @ExceptionHandler(ParticipantNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleParticipantNotFoundException(ParticipantNotFoundException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                "PARTICIPANT_NOT_FOUND",
+                "Participante no encontrado en la conversación",
+                Collections.singletonList(ex.getMessage()));
+
+        log.warn("Participant not found: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+    }
+
+    @ExceptionHandler(UserEnrichmentException.class)
+    public ResponseEntity<ErrorResponse> handleUserEnrichmentException(UserEnrichmentException ex) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                "USER_ENRICHMENT_ERROR",
+                "Error enriqueciendo datos de usuario",
+                Collections.singletonList(ex.getMessage()));
+
+        log.error("User enrichment error: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
+    }
+
+
 }

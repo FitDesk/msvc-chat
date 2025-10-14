@@ -9,7 +9,7 @@ import io.swagger.v3.oas.annotations.servers.Server;
 @OpenAPIDefinition(
         info = @Info(
                 title = "Microservicio Chat",
-                description = "",
+                description = "API para el microservicio de Chat para entrenadores y miembros",
                 termsOfService = "",
                 version = "1.0.0",
                 contact = @Contact(
@@ -27,13 +27,8 @@ import io.swagger.v3.oas.annotations.servers.Server;
                 @Server(
                         description = "Local Server",
                         url = "http://localhost:9096"
-                ),
-                @Server(
-                        description = "Production Server",
-                        url = "https://"
                 )
         }
 )
-
 public class SwaggerConfig {
 }

@@ -1,8 +1,9 @@
 package com.msvcchat.dtos;
 
-public record UserDto(
+public record UserConnectionDto(
         String id,
-        String name,
+        String username,
+        boolean enabled,
         String avatar,
         String initials
 ) {
