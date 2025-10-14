@@ -74,8 +74,7 @@ public class ConversationServiceImpl implements ConversationService {
 
     @Override
     public Mono<Void> markAsRead(String conversationId, String userEmail) {
-        // TODO: Implementar lógica de mensajes no leídos con una colección adicional
-        // Por ahora retornamos vacío
+
         return Mono.empty();
     }
 
