@@ -49,23 +49,21 @@ public class ChatWebSocketHandler implements WebSocketHandler {
         String path = session.getHandshakeInfo().getUri().getPath();
         String roomId = path.substring(path.lastIndexOf('/') + 1);
 
-        log.info("🔌 WebSocket: Intentando conectar a sala: {}", roomId);
+        log.info("WebSocket: Intentando conectar a sala: {}", roomId);
 
-        // ✅ NUEVO: Verificar que la conversación existe en MongoDB
         return mongoTemplate.findById(roomId, ConversationDocument.class)
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.error("❌ Conversación no encontrada en MongoDB: {}", roomId);
+                    log.error("Conversación no encontrada en MongoDB: {}", roomId);
                     return session.close(CloseStatus.NOT_ACCEPTABLE.withReason("Conversación no encontrada"))
                             .then(Mono.empty());
                 }))
                 .flatMap(conversation -> {
-                    log.info("✅ Conversación encontrada: {}, participantes: {}",
+                    log.info(" Conversación encontrada: {}, participantes: {}",
                             roomId, conversation.getParticipants());
 
                     String token = extractToken(session);
 
                     if (token == null) {
-                        log.warn("❌ No se pudo obtener token JWT");
                         return session.close(CloseStatus.BAD_DATA.withReason("Token no encontrado"));
                     }
                     log.info("Token encontrado");
@@ -75,26 +73,22 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                                 String role = jwt.getClaimAsString("authorities");
 
                                 if (email == null || role == null) {
-                                    log.error("❌ Claims inválidos en JWT");
+                                    log.error(" Claims inválidos en JWT");
                                     return session.close(CloseStatus.BAD_DATA.withReason("Claims inválidos"));
                                 }
 
-                                // ✅ Verificar que el usuario es participante de la conversación
                                 if (!conversation.getParticipants().contains(email)) {
-                                    log.error("❌ Usuario {} no es participante de la conversación {}",
+                                    log.error(" Usuario {} no es participante de la conversación {}",
                                             email, roomId);
                                     return session.close(CloseStatus.NOT_ACCEPTABLE
                                             .withReason("No eres participante de esta conversación"));
                                 }
 
-                                log.info("✅ Usuario {} autorizado para la conversación {}", email, roomId);
 
-                                // Asociar al usuario con el room
                                 roomManager.addUserToRoom(roomId, email);
 
                                 Sinks.Many<ChatMessage> sink = roomManager.sinkFor(roomId);
 
-                                // Recuperar el historial del chat
                                 Flux<WebSocketMessage> history = chatService.getHistory(roomId)
                                         .map(dto -> {
                                             try {
@@ -106,7 +100,6 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                                             }
                                         });
 
-                                // Configurar mensajes en tiempo real
                                 Mono<Void> inbound = session.receive()
                                         .map(WebSocketMessage::getPayloadAsText)
                                         .flatMap(text -> {
@@ -133,11 +126,9 @@ public class ChatWebSocketHandler implements WebSocketHandler {
                                             }
                                         });
 
-                                // Enviar historial seguido de mensajes en tiempo real
                                 return session.send(history.concatWith(outbound)).and(inbound);
                             })
                             .onErrorResume(e -> {
-                                log.error("❌ Error al validar token JWT: {}", e.getMessage());
                                 return session.close(CloseStatus.BAD_DATA.withReason("Token inválido"));
                             });
                 });
@@ -147,34 +138,30 @@ public class ChatWebSocketHandler implements WebSocketHandler {
     private String extractToken(WebSocketSession session) {
         var headers = session.getHandshakeInfo().getHeaders();
 
-        // 1. Intentar desde header Authorization (enviado por el Gateway)
         List<String> authHeaders = headers.get(HttpHeaders.AUTHORIZATION);
         if (authHeaders != null && !authHeaders.isEmpty()) {
             String authHeader = authHeaders.get(0);
             if (authHeader.startsWith("Bearer ")) {
-                log.debug("✅ Token encontrado en header Authorization");
+                log.debug("Token encontrado en header Authorization");
                 return authHeader.substring(7);
             }
-            log.debug("✅ Token encontrado en header Authorization (sin Bearer)");
             return authHeader;
         }
 
-        // 2. Intentar desde header custom del Gateway
         List<String> customHeaders = headers.get("X-Auth-Token");
         if (customHeaders != null && !customHeaders.isEmpty()) {
-            log.debug("✅ Token encontrado en header X-Auth-Token");
+            log.debug("Token encontrado en header X-Auth-Token");
             return customHeaders.get(0);
         }
 
-        // 3. Fallback: Intentar desde cookies (por si acaso)
         var cookies = session.getHandshakeInfo().getCookies();
         var accessTokenCookie = cookies.getFirst("access_token");
         if (accessTokenCookie != null) {
-            log.debug("✅ Token encontrado en cookie 'access_token'");
+            log.debug("Token encontrado en cookie 'access_token'");
             return accessTokenCookie.getValue();
         }
 
-        log.warn("⚠️ No se encontró token en ninguna fuente");
+        log.warn(" No se encontró token en ninguna fuente");
         log.debug("Headers disponibles: {}", headers.keySet());
         log.debug("Cookies disponibles: {}", cookies.keySet());
 

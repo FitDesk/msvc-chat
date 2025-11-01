@@ -18,7 +18,6 @@ public class ConversationDocument {
     private String id;
     private Set<String> participants;
     private String lastMessageId;
-//    private Boolean isFavorite;
     private Instant lastActivity;
     private Instant createdAt = Instant.now();
     private Instant updatedAt = Instant.now();

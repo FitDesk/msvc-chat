@@ -144,7 +144,7 @@ public class ConversationServiceImpl implements ConversationService {
                 .orElse(null);
 
         if (participantEmail == null) {
-            log.warn("⚠️ No se encontró email del participante en conversación {}", conversation.getId());
+            log.warn(" No se encontró email del participante en conversación {}", conversation.getId());
             return Mono.just(dto);
         }
 
@@ -214,7 +214,7 @@ public class ConversationServiceImpl implements ConversationService {
                             .defaultIfEmpty(enrichedDto);
                 })
                 .onErrorResume(error -> {
-                    log.error("❌ Error enriqueciendo conversación {}: {}",
+                    log.error(" Error enriqueciendo conversación {}: {}",
                             conversation.getId(), error.getMessage());
                     return Mono.just(dto);
                 });

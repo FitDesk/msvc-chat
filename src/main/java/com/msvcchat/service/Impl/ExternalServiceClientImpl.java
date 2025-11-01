@@ -29,7 +29,7 @@ public class ExternalServiceClientImpl implements ExternalServiceClient {
                 .uri("/users/by-email/{email}", email)
                 .retrieve()
                 .bodyToMono(SimpleUserDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo usuario de security por email {}: {}",
+                .doOnError(error -> log.error(" Error obteniendo usuario de security por email {}: {}",
                         email, error.getMessage()));
     }
 
@@ -39,7 +39,7 @@ public class ExternalServiceClientImpl implements ExternalServiceClient {
                 .uri("/public/member/{userId}", userId)
                 .retrieve()
                 .bodyToMono(MemberDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo miembro de members para userId {}: {}",
+                .doOnError(error -> log.error(" Error obteniendo miembro de members para userId {}: {}",
                         userId, error.getMessage()));
     }
 
@@ -49,7 +49,7 @@ public class ExternalServiceClientImpl implements ExternalServiceClient {
                 .uri("/users/{id}", userId)
                 .retrieve()
                 .bodyToMono(UserSecurityDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo usuario de security por ID {}: {}",
+                .doOnError(error -> log.error(" Error obteniendo usuario de security por ID {}: {}",
                         userId, error.getMessage()));
     }
 
@@ -59,7 +59,7 @@ public class ExternalServiceClientImpl implements ExternalServiceClient {
                 .uri("/users/by-role/{role}", role)
                 .retrieve()
                 .bodyToFlux(SimpleUserDto.class)
-                .doOnError(error -> log.error("❌ Error obteniendo usuarios por rol {}: {}",
+                .doOnError(error -> log.error(" Error obteniendo usuarios por rol {}: {}",
                         role, error.getMessage()));
     }
 }
